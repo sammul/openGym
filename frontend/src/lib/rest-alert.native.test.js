@@ -35,6 +35,8 @@ vi.mock('@capacitor/local-notifications', () => ({
   LocalNotifications: {
     checkPermissions: async () => ({ display: h.perm }),
     requestPermissions: (...args) => (h.request ? h.request(...args) : Promise.resolve({ display: 'granted' })),
+    schedule: async () => {},
+    cancel: async () => {},
   },
 }))
 
@@ -58,11 +60,12 @@ afterAll(() => {
   vi.unstubAllEnvs()
 })
 
+// The iPhone's own end (a local notification) is covered in rest-alert.ios.test.js.
 describe('the rest alert in the iOS app', () => {
-  it('registers nothing, rejects nothing and leaves the end to the server push', async () => {
+  it('registers no RestAlert and rejects nothing', async () => {
     h.platform = 'ios'
     const alert = await import('./rest-alert.js')
-    await expect(alert.armRestAlert(Date.now() + 90_000, { totalSec: 90 })).resolves.toBe(false)
+    await alert.armRestAlert(Date.now() + 90_000, { totalSec: 90 })
     alert.holdRestAlert(60, 90)
     alert.setRestAccent('red')
     alert.disarmRestAlert()

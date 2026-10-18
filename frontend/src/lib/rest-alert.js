@@ -11,7 +11,7 @@
 import { t } from './i18n-core.js'
 import { argb } from './format.js'
 import { accentPair } from './accent.js'
-import { MOBILE, isAndroid } from './mobile.js'
+import { MOBILE, isAndroid, isIOS } from './mobile.js'
 import { REST_SOUNDS } from './rest-sounds.js'
 
 export const REST_ALERT_ID = 42
@@ -90,8 +90,20 @@ const restPlugin = () => pluginP || (pluginP = (async () => {
   return { RestAlert: registerPlugin('RestAlert') }
 })().catch(() => null))
 
-// Resolves true only when an Android alarm was scheduled. Callers use false as
-// "fall back to the server push" — web, iOS, and a failed schedule.
+// The iPhone has no RestAlert plugin: the end there is a plain local notification at the same id,
+// which iOS also hands to a paired Apple Watch when the phone is locked. No countdown card and no
+// buttons, just the moment the rest is over.
+let iosP = null
+const iosNotifications = () => iosP || (iosP = (async () => {
+  if (!(await isIOS())) return null
+  const { LocalNotifications } = await import('@capacitor/local-notifications')
+  return { LocalNotifications }
+})().catch(() => null))
+// Test seam: the plugin the iPhone path talks to.
+export function _setIOSNotifications(LocalNotifications) { iosP = Promise.resolve(LocalNotifications ? { LocalNotifications } : null) }
+
+// Resolves true only when an Android alarm or the iPhone's notification was scheduled. Callers use
+// false as "fall back to the server push" — web and a failed schedule.
 export function armRestAlert(at, opts = {}) {
   if (!MOBILE) return Promise.resolve(false)
   const mine = ++token
@@ -105,7 +117,7 @@ export function armRestAlert(at, opts = {}) {
     let kind = 'failed'
     try { kind = await deliver(alert) } catch { kind = 'failed' }
     if (mine !== token) return false
-    return kind === 'android'
+    return kind === 'android' || kind === 'ios'
   })
 }
 
@@ -124,6 +136,10 @@ export function holdRestAlert(leftSec, totalSec) {
   token++
   if (!MOBILE) return
   enqueue(async () => {
+    // The iPhone's notification has no paused state: the end it was booked for is called off,
+    // and Resume books the new one.
+    const n = await iosNotifications()
+    if (n) { await n.LocalNotifications.cancel({ notifications: [{ id: REST_ALERT_ID }] }); return }
     const p = await restPlugin()
     if (p) await p.RestAlert.hold({ id: REST_ALERT_ID, leftMs: Math.max(1, leftSec) * 1000, totalMs: Math.max(1, totalSec) * 1000 })
   })
@@ -185,7 +201,7 @@ export function askNotifPermissionOnce() {
   if (askP) return askP
   askP = (async () => {
     try {
-      if (!(await isAndroid())) return false
+      if (!(await isAndroid()) && !(await isIOS())) return false
       const { LocalNotifications } = await import('@capacitor/local-notifications')
       const perm = await LocalNotifications.checkPermissions()
       if (perm.display === 'granted') return true
@@ -211,6 +227,15 @@ async function deliver(alert) {
   // The end passed while the call waited its turn (a slow bridge, a frozen WebView): nothing to
   // ring any more, and the plugin would refuse it ("at must be in the future").
   if (!(alert.at > Date.now())) return 'expired'
+  const n = await iosNotifications()
+  if (n) {
+    await n.LocalNotifications.cancel({ notifications: [{ id: alert.id }] })
+    await n.LocalNotifications.schedule({ notifications: [{
+      id: alert.id, title: alert.title, body: '',
+      schedule: { at: new Date(alert.at), allowWhileIdle: true },
+    }] })
+    return 'ios'
+  }
   const p = await restPlugin()
   if (!p) return 'skipped'
   const { RestAlert } = p
@@ -246,6 +271,8 @@ async function deliver(alert) {
 }
 
 async function cancelDelivered() {
+  const n = await iosNotifications()
+  if (n) { await n.LocalNotifications.cancel({ notifications: [{ id: REST_ALERT_ID }] }); return }
   const p = await restPlugin()
   if (p) await p.RestAlert.cancel({ id: REST_ALERT_ID })
 }
