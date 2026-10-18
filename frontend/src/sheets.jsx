@@ -3361,6 +3361,23 @@ export function finishWorkoutSheet({ onDiscard } = {}) {
     ],
   })
 }
+// The Apple Watch's Finish for the workout running here (lib/watch-bridge.js): the watch asked
+// already, so no second question on the phone.
+export function finishWorkoutFromWatch(sid) {
+  const A = S().active
+  if (!A || A.id !== sid || A.editingWorkoutId || A.backfill) return false
+  doFinishWorkout()
+  return true
+}
+// A session the watch ran on its own (lib/watch.js prepareWatchSession), saved the way one
+// finished here is. Not while a workout runs here: that one is never touched, and the watch's
+// waits its turn (false).
+export function commitWatchSession(A) {
+  if (!A || S().active) return false
+  update(s => { s.active = A })
+  doFinishWorkout()
+  return true
+}
 function doFinishWorkout() {
   const st = S()
   const A = st.active
@@ -3383,7 +3400,8 @@ function doFinishWorkout() {
     if (rec && !prs.includes(e.id)) e1prs.push({ id: e.id, ...rec })
   })
   const w = buildCompletedWorkout(A, {
-    end: past ? backfillEnd(A) : sessionEnd(A),
+    // A session from the watch ended when the watch said so, not when the phone heard of it.
+    end: past ? backfillEnd(A) : A.fromWatch && A.end > A.start ? A.end : sessionEnd(A),
     prs,
     snapshotFor: e => isCustomEx(EXIDX[e.id]) ? exerciseMuscleSnapshot(EXIDX[e.id]) : null,
   })
