@@ -33,6 +33,17 @@ export async function isAndroid() {
   }
 }
 
+// The iPhone shell: the rest-over notification (lib/rest-alert.js) and the Apple Watch bridge
+// (lib/watch-bridge.js) only exist there.
+// Asked once: the platform never changes while the app runs.
+let iosP = null
+export function isIOS() {
+  if (!MOBILE) return Promise.resolve(false)
+  return iosP || (iosP = import('@capacitor/core')
+    .then(({ Capacitor }) => Capacitor.getPlatform() === 'ios')
+    .catch(() => false))
+}
+
 const FILE = 'opengym-state.json'
 
 export async function nativeLoad() {

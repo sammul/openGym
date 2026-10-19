@@ -5,7 +5,8 @@ import Capacitor
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // From launch, not from the web app: the watch may have queued commands that woke the app.
+        WatchBridge.shared.activate()
         return true
     }
 
